@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>London House - Reception Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen p-6 font-sans">
+  <div class="max-w-7xl mx-auto space-y-6">
+    
+    <!-- Header -->
+    <div class="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-800">London House Equipment Log</h1>
+        <p class="text-sm text-slate-500">Live reception monitoring dashboard</p>
+      </div>
+      <button onclick="fetchData()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">
+        🔄 Refresh
+      </button>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <!-- Left Column: Currently Out -->
+      <div class="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+        <div class="flex justify-between items-center border-b pb-3">
+          <h2 class="text-xl font-bold text-rose-600 flex items-center gap-2">
+            <span>🔴</span> Currently Checked Out
+          </h2>
+          <span id="out-count" class="bg-rose-100 text-rose-700 font-bold px-3 py-1 rounded-full text-sm">0</span>
+        </div>
+
+        <div id="active-list" class="space-y-3 max-h-[600px] overflow-y-auto">
+          <p class="text-slate-400">Loading active equipment...</p>
+        </div>
+      </div>
+
+      <!-- Right Column: 2-Week History -->
+      <div class="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+        <div class="flex justify-between items-center border-b pb-3">
+          <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <span>📋</span> 2-Week History Log
+          </h2>
+          <span class="text-xs text-slate-400">Auto-clears older than 14 days</span>
+        </div>
+
+        <div id="history-list" class="space-y-2 max-h-[600px] overflow-y-auto text-sm">
+          <p class="text-slate-400">Loading history log...</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const SCRIPT_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE";
+
+    async function fetchData() {
+      try {
+        const res = await fetch(SCRIPT_URL);
+        const data = await res.json();
+        
+        renderActiveLoans(data);
+        renderHistory(data);
+      } catch (err) {
+        console.error("Failed to load records", err);
+      }
+    }
+
+    function renderActiveLoans(data) {
+      const activeContainer = document.getElementById("active-list");
+      const activeItems = data.filter(d => d.status === "OUT" && d.action === "SIGN OUT");
+      
+      document.getElementById("out-count").innerText = activeItems.length;
+
+      if (activeItems.length === 0) {
+        activeContainer.innerHTML = `<p class="text-slate-400">No equipment currently checked out.</p>`;
+        return;
+      }
+
+      activeContainer.innerHTML = activeItems.map(item => `
+        <div class="flex items-center justify-between p-4 border border-rose-100 bg-rose-50/50 rounded-lg">
+          <div>
+            <div class="font-bold text-slate-800 text-lg">${escapeHtml(item.item)}</div>
+            <div class="text-slate-600 font-medium">${escapeHtml(item.name)} — Room ${escapeHtml(item.room)}</div>
+            <div class="text-xs text-slate-400 mt-1">${escapeHtml(item.timestamp)}</div>
+          </div>
+          <button onclick="manualCheckIn('${item.id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 py-2 rounded-lg transition">
+            Check In
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function renderHistory(data) {
+      const historyContainer = document.getElementById("history-list");
+      const fourteenDaysAgo = new Date().getTime() - (14 * 24 * 60 * 60 * 1000);
+
+      const recentHistory = data.filter(d => {
+        const itemTime = new Date(d.timestamp).getTime();
+        return isNaN(itemTime) || itemTime >= fourteenDaysAgo;
+      }).reverse();
+
+      if (recentHistory.length === 0) {
+        historyContainer.innerHTML = `<p class="text-slate-400">No history in the last 14 days.</p>`;
+        return;
+      }
+
+      historyContainer.innerHTML = recentHistory.map(item => `
+        <div class="flex justify-between items-center p-3 border-b border-slate-100">
+          <div>
+            <span class="font-semibold text-slate-700">${escapeHtml(item.action)}:</span> 
+            <span class="font-medium text-slate-900">${escapeHtml(item.item)}</span>
+            <div class="text-xs text-slate-500">${escapeHtml(item.name)} (Room ${escapeHtml(item.room)})</div>
+          </div>
+          <div class="text-xs text-right text-slate-400">
+            ${escapeHtml(item.timestamp)}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function manualCheckIn(id) {
+      if (!confirm("Are you sure you want to mark this item as returned?")) return;
+
+      await fetch(SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify({ actionType: "MANUAL_CHECKIN", id: id })
+      });
+
+      fetchData();
+    }
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    fetchData();
+    setInterval(fetchData, 30000); // Auto refresh every 30 seconds
+  </script>
+</body>
+</html>
